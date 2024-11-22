@@ -23,7 +23,7 @@ def find_next_folder_num(myroot=".", pat="class_%0.2i_*"):
             return i
 
 
-class obs_figure_syntax_processor(self):
+class obs_figure_syntax_processor(object):
     """A class to convert a chunk of lines from an obsidian markdown
     file that contain figure infomation into pandoc/latex code.
 
@@ -95,9 +95,10 @@ class obs_figure_syntax_processor(self):
                 if curline[0] == ':':
                     curline = curline[1:]
                 rest, mystr = curline.split(':',1)
-                if fw in key:
+                mystr = mystr.strip()
+                if "fw" in key:
                     val_str = mystr + '\\textwidth'
-                elif fh in key:
+                elif "fh" in key:
                     val_str = mystr + '\\textheight'
                 else:
                     val_str = mystr
@@ -296,13 +297,16 @@ class obsidian_markdown_processor(txt_mixin.txt_file_with_list):
                        fig_folder_path=figdir)
         myprocessor.parse()
         outlines = myprocessor.convert_to_latex()
+
+        N = len(outlines)
+        self.list[ind:ind+N] = outlines
  
 
 
     def process_figure_syntax(self):
-       """Convert obsidian figure syntax to pandoc/latex by 
-       calling process_one_figure for each figure line index."""
-       if not hasattr(self, "fig_inds"):
+        """Convert obsidian figure syntax to pandoc/latex by 
+        calling process_one_figure for each figure line index."""
+        if not hasattr(self, "fig_inds"):
             self.get_fig_inds()
 
         for i in self.fig_inds:
