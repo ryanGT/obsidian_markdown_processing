@@ -240,8 +240,12 @@ class obsidian_markdown_processor(txt_mixin.txt_file_with_list):
         first_line = self.list[ind]
 
         opt_list = [":fw:", ":fh:", "caption:", "label:"]
-
+        print("ind = %i" % ind) 
         for i in range(1, lines_to_check+1):
+            #check if we are at the end of the document
+            if ind+i == len(self.list):
+                end_ind = ind+i-1
+                break
             curline = self.list[ind + i]
             if curline.strip():
                 # the line is not blank
@@ -258,6 +262,9 @@ class obsidian_markdown_processor(txt_mixin.txt_file_with_list):
                     #   end at the previous line
                     end_ind = ind + i - 1
 
+        print("end_ind = %i" % end_ind)
+        print("len = %i" % len(self.list))
+
         # how do I want to handle blank lines at the end of the 
         # figure lines?
         # - backup to the last non-blank line
@@ -267,12 +274,15 @@ class obsidian_markdown_processor(txt_mixin.txt_file_with_list):
                 # the line is not blank
                 end_ind -= i
                 break
-        return self.list[ind:end_ind+1]
+        outlist = self.list[ind:end_ind+1]
+        print("outlist:\n %s" % outlist)
+        return outlist
+
 
     
 
 
-    def  process_one_figure(self, ind, figfolder="figs"):
+    def process_one_figure(self, ind, figfolder="figs"):
         """For each figure line that starts with ![[, convert that 
         line (and possibly subsequent lines) to \myfig{}{}, 
         \myvfig{}{} or \mycapfig{}{}
@@ -317,6 +327,11 @@ class obsidian_markdown_processor(txt_mixin.txt_file_with_list):
 
     def save(self, outpath):
         txt_mixin.dump(outpath, self.list)
+
+
+
+    
+
 
 
 
@@ -370,4 +385,48 @@ class obsidian_345_slides_procesor(obsidian_markdown_processor):
             outpath = self.guess_output_name()
         obsidian_markdown_processor.save(self, outpath)
         
+
+
+class obsidian_345_hw_processor(obsidian_markdown_processor):
+    def __init__(self, num, obs_class_prep_root, 
+                 dst_dir=None, obs_images_root=None):
+        obsidian_markdown_processor.__init__(self, obs_class_prep_root, \
+                dst_dir=dst_dir, img_root=obs_images_root)
+        self.num = num
+        self.obs_class_prep_root = obs_class_prep_root
+        if obs_images_root is None:
+            obs_images_root = obs_class_prep_root
+        self.obs_images_root = obs_images_root
+
+
+    def find_markdown_file(self):
+        mypat = "HW %i -*.md" % self.num
+        return obsidian_markdown_processor.find_markdown_file(self, mypat)
+
+
+class obsidian_image_processor(obsidian_markdown_processor):
+    """Most classes in this module assume the markdown file lives in the 
+    obsidian vault and needs to be found and copied to another folder.
+
+    This class is for a slightly different use case, assuming the file 
+    has already been created in another folder outiside the vault.  This 
+    can happen during the creation of a homework assignmnet when a header
+    was added to a document."""
+    def __init__(self, pathin, img_root, dst_dir='.'):
+        obsidian_markdown_processor.__init__(self, obs_root=img_root, \
+                dst_dir=dst_dir, img_root=img_root)
+        self.md_path_in = pathin
+
+
+    def main(self, overwrite=False):
+        self.load_obsidian_md()
+        self.copy_images()
+        self.process_figure_syntax()
+        if overwrite is False:
+            fno, ext = os.path.splitext(self.md_path_in)
+            outpath = fno + "_out.md"
+        else:
+            outpath = self.md_path_in
+
+        self.save(outpath)
 
