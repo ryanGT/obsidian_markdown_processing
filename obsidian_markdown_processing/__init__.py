@@ -3,7 +3,11 @@ import os, shutil, re, glob, copy
 
 
 obs_fig_p = re.compile(r"!\[\[(.*)\]\]")
+obs_fig_p2_str = r"!\[.*\]\((.*)\)"
+obs_fig_p2 = re.compile(obs_fig_p2_str)
 
+
+vault_root = os.path.expanduser("~/Work_vault_ios")
 
 def find_next_folder_num(myroot=".", pat="class_%0.2i_*"):
     """I typically create a class folder for each lecture period.  They are
@@ -23,6 +27,10 @@ def find_next_folder_num(myroot=".", pat="class_%0.2i_*"):
             return i
 
 
+# - Can I edit this one class to handle wikilink figures and
+#   standard markdown syntax figures?
+# - or is it better to not mix the two?
+#     - I don't think any obsidian file would ever have both
 class obs_figure_syntax_processor(object):
     """A class to convert a chunk of lines from an obsidian markdown
     file that contain figure infomation into pandoc/latex code.
@@ -32,14 +40,21 @@ class obs_figure_syntax_processor(object):
     Subsequent lines could be blank or start with :fw:, :fh:, caption: 
     and label:"""
     def __init__(self, linesin, fig_folder_path, \
-            default_width='0.9\\textwidth'):
+            default_width='0.9\\textwidth', \
+            default_height='0.8\\textheight', \
+            fig_p=obs_fig_p):
         self.linesin = copy.copy(linesin)
         self.default_width = default_width
+        self.default_height = default_height
+        self.fig_p = fig_p
         self.fig_folder_path = fig_folder_path
         if fig_folder_path == 'figs':
             figfolder = fig_folder_path
         else:
-            rest, figfolder = os.path.split(fig_folder_path)
+            if fig_folder_path:
+                rest, figfolder = os.path.split(fig_folder_path)
+            else:
+                figfolder = None
         self.figfolder = figfolder
 
 
@@ -77,7 +92,8 @@ class obs_figure_syntax_processor(object):
            - fh
            - caption
            label"""
-        q = obs_fig_p.search(self.linesin[0])
+        q = self.fig_p.search(self.linesin[0])#<-- this would change for
+                                             #    non-wiki paths
         self.filename = q.group(1)
         self.check_for_pdf()
         # how do I handle pdf files?
@@ -108,6 +124,10 @@ class obs_figure_syntax_processor(object):
             setattr(self, attr, val_str)
 
 
+    def get_mypath(self):
+        mypath = self.figfolder + '/' + self.filename #<-- this would change
+        return mypath
+
     def convert_to_latex(self):
         # - do I have :fw: or :fh:?
         #     - that should affect my latex function
@@ -118,21 +138,22 @@ class obs_figure_syntax_processor(object):
         #     - \mycapfig{}{}{}
         # - should one class try to handle all cases?
         self.parse()
-        relpath = self.figfolder + '/' + self.filename 
+        mypath = self.get_mypath()                                           #    for non-wiki paths
         if self.caption is not None:
             if self.label is not None:
                 self.caption += ' \\label{%s}' % self.label
             if self.fw is None:
                 self.fw = self.default_width
             outline = "\\mycapfig{%s}{%s}{%s}" % \
-                        (self.fw, relpath, self.caption)
-        elif self.fh is not None:
-            outline = "\\myvfig{%s}{%s}" % (self.fh, relpath)
+                        (self.fw, mypath, self.caption)
+        elif self.fw is not None:
+            outline = "\\myfig{%s}{%s}" % (self.fw, mypath)
+            #outline = "\\myvfig{%s}{%s}" % (self.fh, mypath)
         else:
             # defaut is myfig with default_width
-            if self.fw is None:
-                self.fw = self.default_width
-            outline = "\\myfig{%s}{%s}" % (self.fw, relpath)
+            if self.fh is None:
+                self.fh = self.default_height
+            outline = "\\myvfig{%s}{%s}" % (self.fh, mypath)
 
         N = len(self.linesin)
         linesout = ['']*N
@@ -140,6 +161,29 @@ class obs_figure_syntax_processor(object):
         self.linesout = linesout
         return linesout
 
+
+
+class obs_figure_syntax_processor2(obs_figure_syntax_processor):
+    def __init__(self, linesin, fig_folder_path=None, \
+            default_width='0.9\\textwidth'):
+        obs_figure_syntax_processor.__init__(self, linesin, \
+                                             fig_folder_path=None, \
+                                             default_width=default_width, \
+                                             fig_p = obs_fig_p2)
+
+
+    def check_for_pdf(self):
+        abspath = os.path.join(vault_root, self.filename)
+        fno, ext = os.path.splitext(abspath)
+        if ext != '.pdf':
+            pdf_path = fno + '.pdf'
+            if os.path.exists(pdf_path):
+                self.filename = pdf_path
+
+
+    def get_mypath(self):
+        mypath = os.path.join(vault_root, self.filename)
+        return mypath
 
 
 class obsidian_markdown_processor(txt_mixin.txt_file_with_list):
@@ -246,7 +290,10 @@ class obsidian_markdown_processor(txt_mixin.txt_file_with_list):
             if ind+i == len(self.list):
                 end_ind = ind+i-1
                 break
-            curline = self.list[ind + i]
+            line_ind = ind+i
+            curline = self.list[line_ind]
+            print("ind + i = %i" % line_ind)
+            print("curline = %s" % curline)
             if curline.strip():
                 # the line is not blank
                 # - check to see if it contains any of the optional strings
@@ -260,7 +307,10 @@ class obsidian_markdown_processor(txt_mixin.txt_file_with_list):
                     # related content
                     # - so, we are done and the figure lines 
                     #   end at the previous line
+                    print("not found")
+                    print("curline = %s" % curline)
                     end_ind = ind + i - 1
+                    break
 
         print("end_ind = %i" % end_ind)
         print("len = %i" % len(self.list))
@@ -329,8 +379,63 @@ class obsidian_markdown_processor(txt_mixin.txt_file_with_list):
         txt_mixin.dump(outpath, self.list)
 
 
+fig_ext_list = ['.jpg','.jpeg','.png','.pdf']
 
     
+class obsidian_markdown_processor2(obsidian_markdown_processor):
+    """This version is for in-place generation of markdown presentations,
+       where the goal will be to find abspaths for figures and leave them
+       there without copying the image files to somewhere else.
+
+       I also want to build in the option to use non-wiki figure paths, 
+       which I think obsidian calls markdown syntax: ![filename](path to
+       image),
+       where the path is relative to the vault directory.
+
+       The script ~/scripts/make_slides_obsidian_in_place.py will
+       use this class.  That script will copy the markdown file
+       into the folder slides_out where it will use this class.
+
+       So, the main goal of this class is to convert the markdown figure
+       syntax into beamer-ready figure syntax, possibly including 
+       things like :fh: or :fw: to adujst size."""
+    def __init__(self, md_path):
+        self.md_path_in = md_path
+        self.load_obsidian_md()
+
+
+    def get_fig_inds(self):
+        matches = self.list.findallre(obs_fig_p2_str)
+        fig_inds = []
+
+        for ind in matches:
+            curline = self.list[ind]
+            # - is it a valid fig path?
+            # - not an http url
+            q = obs_fig_p2.search(curline)
+            rp = q.group(1)
+            figpath = os.path.join(vault_root, rp)
+            if os.path.exists(figpath):
+                if "http" not in figpath:
+                    pne, ext = os.path.splitext(figpath)
+                    ext = ext.lower()
+                    if ext in fig_ext_list:
+                        fig_inds.append(ind)
+        self.fig_inds = fig_inds
+
+
+    def process_one_figure(self, ind):
+        """Convert obsidian figure syntax to beamer while handling
+          things like :fh: and :fw:
+        """
+        fig_lines = self.get_fig_lines(ind)
+        myprocessor = obs_figure_syntax_processor2(fig_lines)
+        myprocessor.parse()
+        outlines = myprocessor.convert_to_latex()
+
+        N = len(outlines)
+        self.list[ind:ind+N] = outlines
+ 
 
 
 
